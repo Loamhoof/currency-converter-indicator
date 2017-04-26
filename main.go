@@ -34,7 +34,7 @@ func init() {
 func main() {
 	gtk.Init(nil)
 
-	id := fmt.Sprintf("currency-indicator-%s-%s", from, to)
+	id := fmt.Sprintf("indicator-currency-converter-%s-%s", from, to)
 	indicator = gotk3.NewAppIndicator(id, icon, appindicator.CategorySystemServices)
 
 	indicator.SetStatus(appindicator.StatusActive)
