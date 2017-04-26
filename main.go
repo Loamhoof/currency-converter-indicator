@@ -44,20 +44,33 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	menuItem, err := gtk.MenuItemNewWithLabel("Refresh")
+	if err != nil {
+		panic(err)
+	}
+
+	menu.Append(menuItem)
+
+	menuItem.Show()
 	indicator.SetMenu(menu)
 
-	go refresh()
+	menuItem.Connect("activate", refresh)
+
+	go func() {
+		ticker := time.Tick(time.Minute * 30)
+		for {
+			refresh()
+
+			<-ticker
+		}
+	}()
 
 	gtk.Main()
 }
 
 func refresh() {
-	ticker := time.Tick(time.Minute * 30)
-	for {
-		indicator.SetLabel(fmt.Sprintf("%s/%s: %.3f", from, to, get()), "")
-
-		<-ticker
-	}
+	indicator.SetLabel(fmt.Sprintf("%s/%s: %.3f", from, to, get()), "")
 }
 
 func get() float64 {
