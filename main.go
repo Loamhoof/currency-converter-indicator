@@ -54,32 +54,41 @@ func main() {
 func refresh() {
 	ticker := time.Tick(time.Minute * 30)
 	for {
-		v, err := get()
-		if err != nil {
-			panic(err)
-		}
-
-		indicator.SetLabel(fmt.Sprintf("%s/%s: %.3f", from, to, v), "")
+		indicator.SetLabel(fmt.Sprintf("%s/%s: %.3f", from, to, get()), "")
 
 		<-ticker
 	}
 }
 
-func get() (float64, error) {
+func get() float64 {
 	url := fmt.Sprintf("http://free.currencyconverterapi.com/api/v3/convert?q=%s_%s&compact=ultra", from, to)
 
+	var (
+		decoder *json.Decoder
+		body    map[string]float64
+	)
+
+	ticker := time.Tick(time.Second * 30)
+
+Loop:
 	res, err := http.Get(url)
+
 	if err != nil {
-		return 0, err
+		goto Wait
 	}
 	defer res.Body.Close()
 
-	decoder := json.NewDecoder(res.Body)
-	body := make(map[string]float64)
+	decoder = json.NewDecoder(res.Body)
+	body = make(map[string]float64)
 
 	if err := decoder.Decode(&body); err != nil {
-		return 0, err
+		goto Wait
 	}
 
-	return body[fmt.Sprintf("%s_%s", from, to)], nil
+	return body[fmt.Sprintf("%s_%s", from, to)]
+
+Wait:
+	<-ticker
+
+	goto Loop
 }
