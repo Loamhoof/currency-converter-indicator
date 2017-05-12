@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -14,14 +15,16 @@ import (
 )
 
 var (
-	icon, from, to string
-	indicator      *gotk3.AppIndicatorGotk3
+	icon, from, to, logFile string
+	indicator               *gotk3.AppIndicatorGotk3
+	logger                  *log.Logger
 )
 
 func init() {
 	flag.StringVar(&icon, "icon", "", "Path to the icon")
 	flag.StringVar(&from, "from", "", "Base currency")
 	flag.StringVar(&to, "to", "", "Target currency")
+	flag.StringVar(&logFile, "log", "", "Log file")
 
 	flag.Parse()
 
@@ -29,9 +32,20 @@ func init() {
 		fmt.Println("Missing from/to currency.")
 		os.Exit(1)
 	}
+
+	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
 func main() {
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.ModePerm)
+		if err != nil {
+			logger.Fatalln(err)
+		}
+		defer f.Close()
+		logger = log.New(f, "", log.LstdFlags)
+	}
+
 	gtk.Init(nil)
 
 	id := fmt.Sprintf("indicator-currency-converter-%s-%s", from, to)
@@ -42,12 +56,12 @@ func main() {
 
 	menu, err := gtk.MenuNew()
 	if err != nil {
-		panic(err)
+		logger.Fatalln(err)
 	}
 
 	menuItem, err := gtk.MenuItemNewWithLabel("Refresh")
 	if err != nil {
-		panic(err)
+		logger.Fatalln(err)
 	}
 
 	menu.Append(menuItem)
@@ -79,14 +93,17 @@ func get() float64 {
 	var (
 		decoder *json.Decoder
 		body    map[string]float64
+		rate    float64
 	)
 
 	ticker := time.Tick(time.Second * 30)
 
 Loop:
-	res, err := http.Get(url)
+	logger.Println("Requesting", from, to)
 
+	res, err := http.Get(url)
 	if err != nil {
+		logger.Println("Error", err)
 		goto Wait
 	}
 	defer res.Body.Close()
@@ -98,7 +115,11 @@ Loop:
 		goto Wait
 	}
 
-	return body[fmt.Sprintf("%s_%s", from, to)]
+	rate = body[fmt.Sprintf("%s_%s", from, to)]
+
+	logger.Println("Got", rate)
+
+	return rate
 
 Wait:
 	<-ticker
