@@ -9,18 +9,18 @@ import (
 	"os"
 	"time"
 
-	"github.com/conformal/gotk3/gtk"
-	"github.com/doxxan/appindicator"
-	"github.com/doxxan/appindicator/gtk-extensions/gotk3"
+	pb "github.com/loamhoof/indicator"
+	"github.com/loamhoof/indicator/client"
 )
 
 var (
 	icon, from, to, logFile string
-	indicator               *gotk3.AppIndicatorGotk3
+	port                    int
 	logger                  *log.Logger
 )
 
 func init() {
+	flag.IntVar(&port, "port", 15000, "Port of the shepherd")
 	flag.StringVar(&icon, "icon", "", "Path to the icon")
 	flag.StringVar(&from, "from", "", "Base currency")
 	flag.StringVar(&to, "to", "", "Target currency")
@@ -46,45 +46,43 @@ func main() {
 		logger = log.New(f, "", log.LstdFlags)
 	}
 
-	gtk.Init(nil)
-
 	id := fmt.Sprintf("indicator-currency-converter-%s-%s", from, to)
-	indicator = gotk3.NewAppIndicator(id, icon, appindicator.CategorySystemServices)
 
-	indicator.SetStatus(appindicator.StatusActive)
-	indicator.SetLabel(fmt.Sprintf("%s/%s: N/A", from, to), "")
-
-	menu, err := gtk.MenuNew()
-	if err != nil {
-		logger.Fatalln(err)
-	}
-
-	menuItem, err := gtk.MenuItemNewWithLabel("Refresh")
-	if err != nil {
-		logger.Fatalln(err)
-	}
-
-	menu.Append(menuItem)
-
-	menuItem.Show()
-	indicator.SetMenu(menu)
-
-	menuItem.Connect("activate", refresh)
-
-	go func() {
-		ticker := time.Tick(time.Minute * 30)
-		for {
-			refresh()
-
-			<-ticker
+	sc := client.NewShepherdClient(port)
+	for {
+		err := sc.Init()
+		if err == nil {
+			break
 		}
-	}()
+		logger.Fatalf("Could not connect: %v", err)
 
-	gtk.Main()
-}
+		time.Sleep(time.Second * 5)
+	}
+	defer sc.Close()
 
-func refresh() {
-	indicator.SetLabel(fmt.Sprintf("%s/%s: %.3f", from, to, get()), "")
+	iReq := &pb.Request{
+		Id:     id,
+		Icon:   icon,
+		Label:  fmt.Sprintf("%s/%s: N/A", from, to),
+		Active: true,
+	}
+	if _, err := sc.Update(iReq); err != nil {
+		logger.Println(err)
+	}
+
+	for {
+		iReq = &pb.Request{
+			Id:     id,
+			Icon:   icon,
+			Label:  fmt.Sprintf("%s/%s: %.3f", from, to, get()),
+			Active: true,
+		}
+		if _, err := sc.Update(iReq); err != nil {
+			logger.Println(err)
+		}
+
+		time.Sleep(time.Minute)
+	}
 }
 
 func get() float64 {
