@@ -61,10 +61,11 @@ func main() {
 	defer sc.Close()
 
 	iReq := &pb.Request{
-		Id:     id,
-		Icon:   icon,
-		Label:  fmt.Sprintf("%s/%s: N/A", from, to),
-		Active: true,
+		Id:         id,
+		Icon:       icon,
+		Label:      fmt.Sprintf("%s/%s: N/A", from, to),
+		LabelGuide: "AAA/BBB: 123456789.123",
+		Active:     true,
 	}
 	if _, err := sc.Update(iReq); err != nil {
 		logger.Println(err)
@@ -72,10 +73,11 @@ func main() {
 
 	for {
 		iReq = &pb.Request{
-			Id:     id,
-			Icon:   icon,
-			Label:  fmt.Sprintf("%s/%s: %.3f", from, to, get()),
-			Active: true,
+			Id:         id,
+			Icon:       icon,
+			Label:      fmt.Sprintf("%s/%s: %.3f", from, to, get()),
+			LabelGuide: "AAA/BBB: 123456789.123",
+			Active:     true,
 		}
 		if _, err := sc.Update(iReq); err != nil {
 			logger.Println(err)
