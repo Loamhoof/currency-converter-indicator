@@ -17,6 +17,11 @@ var (
 	icon, from, to, logFile string
 	port                    int
 	logger                  *log.Logger
+
+	symbols = map[string]string{
+		"EUR": "€",
+		"JPY": "¥",
+	}
 )
 
 func init() {
@@ -63,8 +68,8 @@ func main() {
 	iReq := &pb.Request{
 		Id:         id,
 		Icon:       icon,
-		Label:      fmt.Sprintf("%s/%s: N/A", from, to),
-		LabelGuide: "AAA/BBB: 123456789.123",
+		Label:      fmt.Sprintf("%s/%s: N/A", symbol(from), symbol(to)),
+		LabelGuide: "AAA/BBB: 123456789.1",
 		Active:     true,
 	}
 	if _, err := sc.Update(iReq); err != nil {
@@ -75,8 +80,8 @@ func main() {
 		iReq = &pb.Request{
 			Id:         id,
 			Icon:       icon,
-			Label:      fmt.Sprintf("%s/%s: %.3f", from, to, get()),
-			LabelGuide: "AAA/BBB: 123456789.123",
+			Label:      fmt.Sprintf("%s/%s: %.1f", symbol(from), symbol(to), get()),
+			LabelGuide: "AAA/BBB: 123456789.1",
 			Active:     true,
 		}
 		if _, err := sc.Update(iReq); err != nil {
@@ -125,4 +130,12 @@ Wait:
 	<-ticker
 
 	goto Loop
+}
+
+func symbol(currency string) string {
+	if s, ok := symbols[currency]; ok {
+		return s
+	}
+
+	return currency
 }
