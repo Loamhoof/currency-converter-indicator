@@ -7,16 +7,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
 	"time"
-
-	pb "github.com/loamhoof/indicator"
-	"github.com/loamhoof/indicator/client"
 )
 
 var (
-	icon, from, to, logFile string
-	port                    int
-	logger                  *log.Logger
+	from, to string
+	port     int
+	logger   *log.Logger
 
 	symbols = map[string]string{
 		"EUR": "€",
@@ -26,10 +25,8 @@ var (
 
 func init() {
 	flag.IntVar(&port, "port", 15000, "Port of the shepherd")
-	flag.StringVar(&icon, "icon", "", "Path to the icon")
 	flag.StringVar(&from, "from", "", "Base currency")
 	flag.StringVar(&to, "to", "", "Target currency")
-	flag.StringVar(&logFile, "log", "", "Log file")
 
 	flag.Parse()
 
@@ -42,94 +39,94 @@ func init() {
 }
 
 func main() {
-	if logFile != "" {
-		f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.ModePerm)
-		if err != nil {
-			logger.Fatalln(err)
-		}
-		defer f.Close()
-		logger = log.New(f, "", log.LstdFlags)
-	}
-
 	id := fmt.Sprintf("indicator-currency-converter-%s-%s", from, to)
 
-	sc := client.NewShepherdClient(port)
-	for {
-		err := sc.Init()
-		if err == nil {
-			break
-		}
-		logger.Fatalf("Could not connect: %v", err)
-
-		time.Sleep(time.Second * 5)
-	}
-	defer sc.Close()
-
-	iReq := &pb.Request{
-		Id:         id,
-		Icon:       icon,
-		Label:      fmt.Sprintf("%s/%s: N/A", symbol(from), symbol(to)),
-		LabelGuide: "AAA/BBB: 123456789.1",
-		Active:     true,
-	}
-	if _, err := sc.Update(iReq); err != nil {
+	label := fmt.Sprintf("%s/%s: N/A", symbol(from), symbol(to))
+	if err := update(id, label); err != nil {
 		logger.Println(err)
 	}
 
-	for {
-		iReq = &pb.Request{
-			Id:         id,
-			Icon:       icon,
-			Label:      fmt.Sprintf("%s/%s: %.1f", symbol(from), symbol(to), get()),
-			LabelGuide: "AAA/BBB: 123456789.1",
-			Active:     true,
-		}
-		if _, err := sc.Update(iReq); err != nil {
-			logger.Println(err)
-		}
+	feedC := make(chan float64)
+	doneC := make(chan struct{})
 
-		time.Sleep(time.Minute)
+	go feed(feedC, doneC)
+
+	sigC := make(chan os.Signal, 1)
+	signal.Notify(sigC, os.Interrupt)
+
+	for {
+		select {
+		case v := <-feedC:
+			label := fmt.Sprintf("%s/%s: %.2f", symbol(from), symbol(to), v)
+			if err := update(id, label); err != nil {
+				logger.Println(err)
+			}
+		case <-sigC:
+			close(doneC)
+			os.Exit(0)
+		}
 	}
 }
 
-func get() float64 {
+func feed(feedC chan<- float64, doneC <-chan struct{}) {
 	url := fmt.Sprintf("http://free.currencyconverterapi.com/api/v3/convert?q=%s_%s&compact=ultra", from, to)
 
-	var (
-		decoder *json.Decoder
-		body    map[string]float64
-		rate    float64
-	)
+	rate, err := get(url)
+	if err != nil {
+		logger.Println(err)
+	}
 
-	ticker := time.Tick(time.Second * 30)
+	feedC <- rate
 
-Loop:
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			rate, err := get(url)
+			if err != nil {
+				logger.Println(err)
+				break
+			}
+
+			feedC <- rate
+		case <-doneC:
+			return
+		}
+	}
+}
+
+func get(url string) (float64, error) {
 	logger.Println("Requesting", from, to)
 
 	res, err := http.Get(url)
 	if err != nil {
-		logger.Println("Error", err)
-		goto Wait
+		return 0, err
 	}
 	defer res.Body.Close()
 
-	decoder = json.NewDecoder(res.Body)
-	body = make(map[string]float64)
-
+	decoder := json.NewDecoder(res.Body)
+	body := make(map[string]float64)
 	if err := decoder.Decode(&body); err != nil {
-		goto Wait
+		return 0, err
 	}
 
-	rate = body[fmt.Sprintf("%s_%s", from, to)]
+	rate := body[fmt.Sprintf("%s_%s", from, to)]
 
 	logger.Println("Got", rate)
 
-	return rate
+	return rate, nil
+}
 
-Wait:
-	<-ticker
+func update(id, label string) error {
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%v/%s", port, id), "text/plain", strings.NewReader(label))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
 
-	goto Loop
+	return nil
 }
 
 func symbol(currency string) string {
